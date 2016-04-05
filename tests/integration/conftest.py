@@ -27,13 +27,19 @@ def environment(settings):
 
 
 @pytest.fixture(scope="session")
-def io_stream_names(settings, environment):
-    """The name of the input and output streams in the rawpipe layer."""
+def output_stream_name(settings, environment):
+    """The name of the output Kinesis stream."""
     layer = [l for l in environment.layers
              if l.name == settings.streams_layer_name][0]
-    return (layer.outputs.get("InputStream"),
-            layer.outputs.get("OutputStream"),
-            layer.outputs.get("ErrorStream"))
+    return layer.outputs.get("OutputStream")
+
+
+@pytest.fixture(scope="session")
+def input_stream_name(settings, environment):
+    """The name of the output Kinesis stream."""
+    layer = [l for l in environment.layers
+             if l.name == settings.streams_layer_name][0]
+    return layer.outputs.get("InputStream")
 
 
 @pytest.fixture(scope="session")
@@ -44,18 +50,20 @@ def kinesis():
 
 
 @pytest.fixture(scope="function")
-def shard_iterators(kinesis, io_stream_names):
+def shard_iterators(kinesis, output_stream_name):
     """Get the latest shard iterator after emptying a shard."""
     sis = []
-    for stream_name in io_stream_names:
+    for shard in range(2):
         si = kinesis.get_shard_iterator(
-            StreamName=stream_name,
-            ShardId="shardId-000000000000",     # Only 1 shard
+            StreamName=output_stream_name,
+            ShardId="shardId-{0:012d}".format(shard),
             ShardIteratorType="LATEST")["ShardIterator"]
         # At most 5 seconds to empty the shard
         for _ in range(10):
-            kinesis_recs = kinesis.get_records(ShardIterator=si, Limit=10000)
+            kinesis_recs = kinesis.get_records(ShardIterator=si,
+                                               Limit=1000)
             si = kinesis_recs["NextShardIterator"]
             time.sleep(0.2)
         sis.append(si)
+
     return sis

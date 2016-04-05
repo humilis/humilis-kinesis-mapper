@@ -1,6 +1,6 @@
 ---
 resources:
-    {# The lambda function #}
+    # The lambda function
     LambdaFunction:
       Type: "AWS::Lambda::Function"
       Properties:
@@ -16,7 +16,7 @@ resources:
           "Fn::GetAtt":
               - LambdaExecutionRole
               - Arn
-    {# The role associated to the Lambda function that processes raw events #}
+    # The role associated to the Lambda function that processes raw events
     LambdaExecutionRole:
       Type: "AWS::IAM::Role"
       Properties:
@@ -27,7 +27,7 @@ resources:
               Principal:
                   Service: 'lambda.amazonaws.com'
               Action: 'sts:AssumeRole'
-        {# Keep all environment role under the same path #}
+        # Keep all environment role under the same path
         Path: {{ "/{}/".format(_env.name) }}
         Policies:
           - PolicyName: root
@@ -35,7 +35,7 @@ resources:
               Version: "2012-10-17"
               Statement:
                 - Effect: Allow
-                  {# Write access to Cloudwatch logs #}
+                  # Write access to Cloudwatch logs
                   Action:
                     - "logs:CreateLogGroup"
                     - "logs:CreateLogStream"
@@ -43,7 +43,7 @@ resources:
                   Resource: "arn:aws:logs:*:*:*"
                 {% if output_delivery_stream or input_delivery_stream or error_delivery_stream %}
                 - Effect: Allow
-                  {# Write access to the Firehose delivery stream(s) #}
+                  # Write access to the Firehose delivery stream(s)
                   Action:
                     - "firehose:PutRecord"
                     - "firehose:PutRecordBatch"
@@ -61,20 +61,20 @@ resources:
                     {% endif %}
                 {% endif %}
                 - Effect: Allow
-                  {# Permission to list and describe I/O streams #}
+                  # Permission to list and describe I/O streams
                   Action:
                     - "kinesis:DescribeStream"
                     - "kinesis:ListStreams"
                   Resource: "*"
                 - Effect: Allow
-                  {# Permissions to read from the input stream #}
+                  # Permissions to read from the input stream
                   Action:
                     - "kinesis:GetRecords"
                     - "kinesis:GetShardIterator"
                   Resource: {{ input_stream.arn }}
                   {% if output_stream or error_stream %}
                 - Effect: Allow
-                  {# Permissions to write to output stream #}
+                  # Permissions to write to output stream
                   Action:
                     - "kinesis:PutRecords"
                   Resource:
@@ -86,29 +86,36 @@ resources:
                     {% endif %}
                   {% endif %}
                 - Effect: Allow
-                  {# Permissions to access the DynamoDB secrets table #}
+                  # Permissions to access the DynamoDB secrets table
                   Action:
                     - "dynamodb:GetItem"
                   Resource: "*"
                 - Effect: Allow
+                  # Read/write permission on the associated state tables
                   Action:
                     - "dynamodb:*"
                   Resource:
+                    {% for shard in range(input_stream.shard_count|int()) %}
                     - "Fn::Join":
                       - ""
-                      - ["arn:aws:dynamodb:", {"Ref": "AWS::Region"},":", {"Ref": "AWS::AccountId"}, ":", "table/", {"Ref": "StateTable"}]
+                      - ["arn:aws:dynamodb:", {"Ref": "AWS::Region"},":", {"Ref": "AWS::AccountId"}, ":", "table/", {"Ref": "StateTable{{shard}}"}]
+                    {% endfor %}
     InputEventSourceMapping:
       Type: "AWS::Lambda::EventSourceMapping"
       Properties:
         BatchSize: {{ batch_size }}
-        {# The ARN of the input Kinesis stream #}
+        # The ARN of the input Kinesis stream
         EventSourceArn: {{ input_stream.arn }}
         FunctionName:
           Ref: LambdaFunction
         StartingPosition:
           TRIM_HORIZON
-    {# The DynamoDB table that keeps state information #}
-    StateTable:
+    # The DynamoDB tables that keep shard-specific state information
+    #
+    # Events in different shards of the input stream may be processed
+    # concurrently and thus we need a table per shard
+    {% for shard in range(input_stream.shard_count|int()) %}
+    StateTable{{shard}}:
       Type: "AWS::DynamoDB::Table"
       Properties:
         AttributeDefinitions:
@@ -119,10 +126,11 @@ resources:
           - AttributeName: id
             KeyType: HASH
         ProvisionedThroughput:
-          ReadCapacityUnits: 50
-          WriteCapacityUnits: 50
+          ReadCapacityUnits: {{dynamodb_capacity.read}}
+          WriteCapacityUnits: {{dynamodb_capacity.write}}
         {% if _env.stage %}
-        TableName: {{_env.name}}-{{_layer.name}}-{{_env.stage}}-state
+        TableName: {{_env.name}}-{{_layer.name}}-{{_env.stage}}-{{shard}}-state
         {% else %}
-        TableName: {{_env.name}}-{{_layer.name}}-state
+        TableName: {{_env.name}}-{{_layer.name}}-{{shard}}-state
         {% endif %}
+    {% endfor %}

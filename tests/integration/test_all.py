@@ -21,17 +21,13 @@ def get_all_records(client, si, limit, timeout=10):
     return retrieved_recs
 
 
-def test_io_streams_put_get_record(kinesis, io_stream_names, shard_iterators,
-                                   payloads, events):
+def test_io_streams_put_get_record(kinesis, payloads, shard_iterators, events,
+                                   input_stream_name, output_stream_name):
     """Put and read a record from the input stream."""
-    input_stream, output_stream, _ = io_stream_names
-
-    # Latest shard iterators after emptying both the input and output streams
-    input_si, output_si, _ = shard_iterators
 
     # Put some records in the input stream
     response = kinesis.put_records(
-        StreamName=input_stream,
+        StreamName=input_stream_name,
         Records=[
             {
                 "Data": payload,
@@ -40,8 +36,10 @@ def test_io_streams_put_get_record(kinesis, io_stream_names, shard_iterators,
 
     assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
-    retrieved_recs = get_all_records(kinesis, output_si, len(payloads),
-                                     min(max(15, 3 * len(payloads)), 150))
+    retrieved_recs = []
+    timeout = min(max(15, 4 * len(payloads)), 150)
+    for si in shard_iterators:
+        retrieved_recs += get_all_records(kinesis, si, len(payloads), timeout)
 
     assert len(retrieved_recs) == len(payloads)
     retrieved_events = [json.loads(x["Data"].decode()) for x in retrieved_recs]

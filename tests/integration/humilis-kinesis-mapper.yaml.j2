@@ -9,16 +9,19 @@ humilis-kinesis-mapper:
         - layer: streams
           layer_type: streams
           streams:
+              # Use two shards to test support for multiple shards
               - name: InputStream
-                shard_count: 1
+                shard_count: 2
               - name: OutputStream
-                shard_count: 1
+                shard_count: 2
               - name: ErrorStream
                 shard_count: 1
 
-        # Parses user agents and adds a random UUID field
+        # Parses user agents. Stores also some state info to test
+        # support for stateful Lambdas and multi-shard streams.
         - layer: kinesis-mapper
           layer_type: kinesis-mapper
+          partition_key: myparserpkg.__init__:partition_key
           lambda_dependencies:
             - user-agents
             - mycode/myparserpkg

@@ -15,6 +15,18 @@ meta:
         {% endfor %}
     {% endif %}
     parameters:
+        dynamodb_capacity:
+            description:
+                The read and write capacity for the Lambda state table(s)
+            value:
+                read: 5
+                write: 5
+        partition_key:
+            description:
+                A callable that produces the partition key that determines the 
+                target shard for output events. If not provided a random 
+                partition key will be used.
+            value:
         callables:
             description:
                 List of callables in dot-notation to call for every event in an input stream
@@ -47,6 +59,12 @@ meta:
                         parameters:
                             layer_name: {{streams[io].layer}}
                             output_name: {{streams[io].stream}}Arn
+                shard_count:
+                    ref:
+                        parser: output
+                        parameters:
+                            layer_name: {{streams[io].layer}}
+                            output_name: {{streams[io].stream}}ShardCount
         {% endif %}
         {% if delivery[io] %}
         {{io}}_delivery_stream:
